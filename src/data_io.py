@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict
 
 import pandas as pd
 
@@ -16,6 +16,17 @@ REQUIRED_COLUMNS = [
     "conversions",
     "revenue",
 ]
+
+# --- 2) Column mapping for Marketing Campaign CSV ---
+COLUMN_MAPPING = {
+    "Date": "date",
+    "Channel_Used": "channel",
+    "Acquisition_Cost": "spend",
+    "Impressions": "impressions",
+    "Clicks": "clicks",
+    "Conversion_Rate": "conversion_rate",
+    "ROI": "roi",
+}
 
 
 @dataclass
@@ -63,5 +74,60 @@ def load_data(file) -> IngestionResult:
     # Basic cleanup: trim column names
     df.columns = [c.strip() for c in df.columns]
 
+    # Apply column mapping
+    df = _apply_column_mapping(df)
+
     schema_ok, missing = validate_schema(df)
     return IngestionResult(df=df, used_dummy=False, schema_ok=schema_ok, missing_columns=missing)
+
+
+def _apply_column_mapping(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Maps incoming CSV columns to required schema and calculates missing metrics.
+    """
+    # Step 1: Rename columns based on mapping
+    rename_map = {}
+    for orig_col, new_col in COLUMN_MAPPING.items():
+        if orig_col in df.columns:
+            rename_map[orig_col] = new_col
+
+    df = df.rename(columns=rename_map)
+
+    # Step 2: Convert numeric columns to proper types
+    numeric_cols = ["spend", "impressions", "clicks", "conversion_rate", "roi"]
+    for col in numeric_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+
+    # Step 3: Calculate missing required columns
+    # Calculate conversions from clicks and conversion_rate
+    if "clicks" in df.columns and "conversion_rate" in df.columns:
+        max_conv = df["conversion_rate"].max()
+        if max_conv <= 1:
+            # Already in fraction form (e.g., 0.05)
+            df["conversions"] = (df["clicks"] * df["conversion_rate"]).round().astype(int)
+        else:
+            # Percent form (e.g., 5 or 5.0)
+            df["conversions"] = (df["clicks"] * df["conversion_rate"] / 100).round().astype(int)
+    elif "clicks" in df.columns:
+        # If conversion_rate is missing, assume 5% default
+        df["conversions"] = (df["clicks"] * 0.05).round().astype(int)
+
+    # Calculate revenue from spend and ROI
+    if "spend" in df.columns and "roi" in df.columns:
+        # ROI % → Revenue = Spend * (1 + ROI/100)
+        df["revenue"] = (df["spend"] * (1 + df["roi"] / 100)).round(2)
+    elif "spend" in df.columns:
+        # If ROI is missing, assume 2x return (100% ROI)
+        df["revenue"] = (df["spend"] * 2).round(2)
+
+    # Step 4: Keep required columns but also preserve additional columns for analysis
+    # Ensure required columns exist (add them if missing)
+    for col in REQUIRED_COLUMNS:
+        if col not in df.columns:
+            df[col] = 0  # Default value for missing required columns
+
+    # Don't drop extra columns - keep them for analysis
+    # df = df[REQUIRED_COLUMNS]  # Commented out to preserve extra columns
+
+    return df

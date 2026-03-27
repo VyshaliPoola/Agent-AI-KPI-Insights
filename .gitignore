@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.py~
+*.env
+.env
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Streamlit / local secrets
+.streamlit/secrets.toml
+
+# VS Code
+.vscode/
+
+# macOS
+.DS_Store
+
+# general
+pip-log.txt
+pip-delete-this-directory.txt
+coverage/
+htmlcov/
+.tox/
+.nox/
+.cache/
+.pytest_cache/
+
+# logs
+*.log
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Optional: local data
+data/
+outputs/

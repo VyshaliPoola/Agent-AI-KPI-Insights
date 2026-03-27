@@ -50,13 +50,24 @@ periods = list(weekly["date"])
 current_period = st.selectbox("Select Current Period", periods, index=len(periods)-1)
 baseline_period = st.selectbox("Select Baseline Period", periods, index=max(len(periods)-2, 0))
 
+# Dimension selector (supports your extra columns)
+dimension_options = [c for c in result.df.columns if c not in ["date", "spend", "impressions", "clicks", "conversions", "revenue"]]
+if "channel" in dimension_options:
+    default_dimension = "channel"
+elif len(dimension_options) > 0:
+    default_dimension = dimension_options[0]
+else:
+    default_dimension = "channel"
+
+dimension = st.selectbox("Driver dimension", dimension_options, index=dimension_options.index(default_dimension) if default_dimension in dimension_options else 0)
+
 threshold = st.slider("Anomaly Threshold (% WoW)", 5, 50, 15)
 
 driver_df = driver_attribution_by_dimension(
     result.df,
     current_period,
     baseline_period,
-    dimension="channel",
+    dimension=dimension,
     metric="revenue"
 )
 
@@ -70,7 +81,7 @@ insights = build_insights_json(
     current_period=current_period,
     baseline_period=baseline_period,
     anomaly_df=anomaly_df,
-    dimension="channel",
+    dimension=dimension,
     metric="revenue"
 )
 
