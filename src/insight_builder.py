@@ -104,6 +104,68 @@ def detect_threshold_anomalies(weekly_df: pd.DataFrame, threshold_pct: float = 1
     return pd.DataFrame(anomalies)
 
 
+def group_by_dimension_metric(
+    df: pd.DataFrame,
+    dimension: str,
+    metric: str,
+    periods: list[str] | None = None,
+) -> pd.DataFrame:
+    """
+    Group KPI metric by a selected dimension and optional periods.
+
+    Returns a DataFrame with date + dimension + aggregated metric.
+    """
+    if dimension not in df.columns:
+        raise ValueError(f"Dimension '{dimension}' not found in dataframe columns")
+
+    if metric not in df.columns:
+        raise ValueError(f"Metric '{metric}' not found in dataframe columns")
+
+    work_df = df.copy()
+
+    if periods is not None and "date" in work_df.columns:
+        work_df = work_df[work_df["date"].isin(periods)]
+
+    grouped = (
+        work_df
+        .groupby(["date", dimension])[metric]
+        .sum()
+        .reset_index()
+        .sort_values(["date", metric], ascending=[True, False])
+    )
+
+    return grouped
+
+
+def compare_two_dimensions(
+    df: pd.DataFrame,
+    dim1: str,
+    dim2: str,
+    metric: str,
+    period: str,
+) -> pd.DataFrame:
+    """
+    Compare metric aggregated by two dimensions for a single period.
+    """
+    if dim1 not in df.columns or dim2 not in df.columns:
+        raise ValueError("Selected dimensions must be in DataFrame columns")
+
+    if metric not in df.columns:
+        raise ValueError("Selected metric must be in DataFrame columns")
+
+    base = df[df["date"] == period]
+
+    summary = (
+        base
+        .groupby([dim1, dim2])[metric]
+        .sum()
+        .reset_index()
+        .sort_values(metric, ascending=False)
+    )
+
+    return summary
+
+
 def build_insights_json(
     weekly_df: pd.DataFrame,
     driver_df: pd.DataFrame,
