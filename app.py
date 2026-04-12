@@ -287,7 +287,11 @@ if st.session_state.chart_spec is not None:
     st.json(st.session_state.chart_spec)
 
     try:
-        chart = create_chart_from_spec(result.df, st.session_state.chart_spec)
+        chart = create_chart_from_spec(
+    result.df,
+    st.session_state.chart_spec,
+    current_period=current_period
+)
         st.altair_chart(chart.properties(height=420), use_container_width=True)
     except Exception as render_error:
         st.error(f"Unable to render chart from spec: {render_error}")

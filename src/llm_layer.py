@@ -2,7 +2,9 @@ import os
 import json
 from dotenv import load_dotenv
 import google.generativeai as genai
-
+from langchain_core.prompts import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from langchain_google_genai import ChatGoogleGenerativeAI
 from src.prompts import (
     CHART_RECOMMENDATION_TEMPLATE,
     INTERPRETATION_TEMPLATE,
@@ -23,7 +25,21 @@ def _load_model():
 
     return genai.GenerativeModel(model_name)
 
+def _load_lc_model():
+    load_dotenv()
+    api_key = os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        raise ValueError("GOOGLE_API_KEY not found.")
 
+    model_name = os.getenv("GEMINI_MODEL")
+    if not model_name:
+        raise ValueError("GEMINI_MODEL not configured.")
+
+    return ChatGoogleGenerativeAI(
+        model=model_name,
+        google_api_key=api_key,
+        temperature=0
+    )
 def _extract_json_object(text: str) -> dict:
     try:
         return json.loads(text)
@@ -68,29 +84,37 @@ def generate_exec_memo(insights: dict, chart_spec: dict | None = None) -> str:
             f"This chart helps answer: {chart_spec.get('question')}"
         )
 
-    interpretation_prompt = INTERPRETATION_TEMPLATE.format(
-        insights_json=json.dumps(insights, indent=2),
-        chart_context=chart_context,
-    )
-    interpretation_response = model.generate_content(interpretation_prompt)
-    interpretation_text = interpretation_response.text
+    lc_model = _load_lc_model()
 
-    recommendation_prompt = RECOMMENDATION_TEMPLATE.format(
-        interpretation_text=interpretation_text
+    interpretation_prompt = PromptTemplate(
+        template=INTERPRETATION_TEMPLATE,
+        input_variables=["insights_json", "chart_context"]
     )
-    recommendation_response = model.generate_content(recommendation_prompt)
-    recommendation_text = recommendation_response.text
+
+    interpretation_chain = interpretation_prompt | lc_model | StrOutputParser()
+
+    interpretation_text = interpretation_chain.invoke({
+        "insights_json": json.dumps(insights, indent=2),
+        "chart_context": chart_context,
+    })
+
+    recommendation_prompt = PromptTemplate(
+        template=RECOMMENDATION_TEMPLATE,
+        input_variables=["interpretation_text"]
+    )
+
+    recommendation_chain = recommendation_prompt | lc_model | StrOutputParser()
+
+    recommendation_text = recommendation_chain.invoke({
+        "interpretation_text": interpretation_text
+    })
 
     final_memo = f"""
 EXECUTIVE PERFORMANCE MEMO
 
-Chart recommendation:
-{chart_context}
-
-🔹 Performance Analysis:
 {interpretation_text}
 
-🔹 Recommended Actions:
+Recommended Actions
 {recommendation_text}
 """
     return final_memo

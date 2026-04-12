@@ -45,22 +45,56 @@ def generate_bar_plot(
     df: pd.DataFrame,
     x: str,
     y: str,
-    color: Optional[str] = None,
-    title: Optional[str] = None,
+    color: str | None = None,
+    title: str | None = None
 ) -> alt.Chart:
-    x_type = _get_axis_type(df, x)
-    if _get_axis_type(df, y) != "Q":
-        raise ValueError(f"Bar plot y-axis must be numeric. '{y}' is not numeric.")
+    chart_df = df.copy()
 
-    chart = alt.Chart(df).mark_bar().encode(
-        x=alt.X(f"{x}:{x_type}", title=x.replace("_", " ").title()),
-        y=alt.Y(f"{y}:Q", title=y.replace("_", " ").title()),
+    # sort descending by y for cleaner ranking
+    chart_df = chart_df.sort_values(by=y, ascending=False)
+
+    # base bar chart
+    bars = (
+        alt.Chart(chart_df)
+        .mark_bar()
+        .encode(
+            x=alt.X(
+                f"{x}:N",
+                sort="-y",
+                title=x.replace("_", " ").title(),
+                axis=alt.Axis(labelAngle=-45)
+            ),
+            y=alt.Y(
+                f"{y}:Q",
+                title=f"{y.replace('_', ' ').title()} (Current Period)"
+            ),
+            color=alt.Color(f"{color}:N", title=color.replace("_", " ").title()) if color else alt.value("#1f77b4"),
+            tooltip=[x, y] + ([color] if color else [])
+        )
+        .properties(
+            title=title,
+            width=850,
+            height=420
+        )
     )
-    if color:
-        chart = chart.encode(color=alt.Color(f"{color}:N", title=color.replace("_", " ").title()))
 
-    return chart.properties(title=title or f"{y.replace('_', ' ').title()} by {x.replace('_', ' ').title()}")
+    # value labels on top of bars
+    labels = (
+        alt.Chart(chart_df)
+        .mark_text(
+            align="center",
+            baseline="bottom",
+            dy=-4,
+            fontSize=11
+        )
+        .encode(
+            x=alt.X(f"{x}:N", sort="-y"),
+            y=alt.Y(f"{y}:Q"),
+            text=alt.Text(f"{y}:Q", format=",.0f")
+        )
+    )
 
+    return bars + labels
 
 def generate_scatter_plot(
     df: pd.DataFrame,
@@ -137,7 +171,11 @@ def generate_histogram(
     )
 
 
-def create_chart_from_spec(df: pd.DataFrame, chart_spec: dict) -> alt.Chart:
+def create_chart_from_spec(
+    df: pd.DataFrame,
+    chart_spec: dict,
+    current_period: str | None = None
+) -> alt.Chart:
     if not isinstance(chart_spec, dict):
         raise ValueError("Chart specification must be a dictionary.")
 
@@ -146,23 +184,46 @@ def create_chart_from_spec(df: pd.DataFrame, chart_spec: dict) -> alt.Chart:
     y = chart_spec.get("y")
     color = chart_spec.get("color")
     title = chart_spec.get("title")
+    question = str(chart_spec.get("question", "")).lower()
 
     if chart_type not in VALID_CHART_TYPES:
         raise ValueError(f"Unsupported chart_type '{chart_type}'. Supported: {sorted(VALID_CHART_TYPES)}")
 
+    plot_df = df.copy()
+
+    # Apply current-period filter if the question refers to the current period
+    if current_period is not None and "current period" in question and "date" in plot_df.columns:
+        plot_df = plot_df[plot_df["date"] == current_period]
+
     if chart_type == "histogram":
-        return generate_histogram(df, x, title=title)
+        return generate_histogram(plot_df, x, title=title)
 
     if x is None or y is None:
         raise ValueError("Chart specification must include both 'x' and 'y' for this chart type.")
 
-    if chart_type == "line":
-        return generate_line_plot(df, x, y, color=color, title=title)
+    # For bar charts with categorical x and numeric y, aggregate before plotting
     if chart_type == "bar":
-        return generate_bar_plot(df, x, y, color=color, title=title)
+        if _get_axis_type(plot_df, x) == "N" and _get_axis_type(plot_df, y) == "Q":
+            agg_cols = [x]
+            if color:
+                agg_cols.append(color)
+
+            chart_df = (
+                plot_df.groupby(agg_cols, dropna=False)[y]
+                .sum()
+                .reset_index()
+            )
+            return generate_bar_plot(chart_df, x, y, color=color, title=title)
+
+        return generate_bar_plot(plot_df, x, y, color=color, title=title)
+
+    if chart_type == "line":
+        return generate_line_plot(plot_df, x, y, color=color, title=title)
+
     if chart_type == "scatter":
-        return generate_scatter_plot(df, x, y, color=color, title=title)
+        return generate_scatter_plot(plot_df, x, y, color=color, title=title)
+
     if chart_type == "box":
-        return generate_box_plot(df, x, y, color=color, title=title)
+        return generate_box_plot(plot_df, x, y, color=color, title=title)
 
     raise ValueError(f"Chart type '{chart_type}' is not implemented.")

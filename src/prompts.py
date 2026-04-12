@@ -23,10 +23,11 @@ CHART CONTEXT:
 
 
 INTERPRETATION_TEMPLATE = """
-You are a senior business analyst.
+You are a senior business analyst preparing a short executive performance memo.
 
 Use the KEY FINDINGS first as the highest-priority signals.
-Then use the remaining structured insights only as supporting evidence.
+Use the remaining structured insights only as supporting evidence.
+Do not invent any facts not present in the JSON.
 
 INSIGHTS JSON:
 {insights_json}
@@ -34,30 +35,45 @@ INSIGHTS JSON:
 CHART CONTEXT:
 {chart_context}
 
-Explain:
-1. What changed in performance
-2. Why it likely changed
-3. Key risks observed
-4. What the chart helps clarify
+Write the output in this exact structure:
 
-Write clearly and concisely for executives.
-Use short bullet points.
-Do not invent any facts not present in the JSON.
+Performance Summary
+- Exactly 3 short bullet points
+- Focus on the most important KPI movements only
+
+Key Drivers
+- 2 to 3 short bullet points
+- Highlight the strongest negative and positive drivers
+
+Risks / Anomalies
+- 1 to 2 short bullet points
+- Mention only the most important risk or anomaly
+
+Chart Insight
+- 1 short bullet point explaining why the chart is useful
+
+Keep the tone executive, concise, and business-focused.
+Avoid long paragraphs.
+Avoid repeating the same KPI in multiple sections.
 """
 
 RECOMMENDATION_TEMPLATE = """
 You are a growth strategy expert.
 
-Based on this analysis:
+Based on the analysis below:
 
 {interpretation_text}
 
-Provide:
-1. Exactly three actionable recommendations
-2. Keep them practical, business-focused, and easy to implement
-3. Avoid repeating raw numbers from the analysis
+Write exactly 3 actionable recommendations.
 
-Write in bullet points only.
+Rules:
+- Each recommendation must be short and specific
+- Focus on actions a marketing manager can realistically take
+- Do not repeat raw KPI numbers
+- Do not restate the same recommendation in different words
+- Keep each bullet to one sentence
+
+Return only 3 bullet points.
 """
 
 
