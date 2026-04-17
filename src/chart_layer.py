@@ -192,11 +192,15 @@ def create_chart_from_spec(
     plot_df = df.copy()
 
     # Apply current-period filter if the question refers to the current period
-    if current_period is not None and "current period" in question and "date" in plot_df.columns:
+    question = str(chart_spec.get("question", "")).lower()
+    title = str(chart_spec.get("title", "")).lower()
+    scope_text = f"{title} {question}"
+
+    if current_period is not None and "current period" in scope_text and "date" in plot_df.columns:
         plot_df = plot_df[plot_df["date"] == current_period]
 
     if chart_type == "histogram":
-        return generate_histogram(plot_df, x, title=title)
+        return generate_histogram(plot_df, x, title=chart_spec.get("title"))
 
     if x is None or y is None:
         raise ValueError("Chart specification must include both 'x' and 'y' for this chart type.")
@@ -213,17 +217,17 @@ def create_chart_from_spec(
                 .sum()
                 .reset_index()
             )
-            return generate_bar_plot(chart_df, x, y, color=color, title=title)
+            return generate_bar_plot(chart_df, x, y, color=color, title=chart_spec.get("title"))
 
-        return generate_bar_plot(plot_df, x, y, color=color, title=title)
+        return generate_bar_plot(plot_df, x, y, color=color, title=chart_spec.get("title"))
 
     if chart_type == "line":
-        return generate_line_plot(plot_df, x, y, color=color, title=title)
+        return generate_line_plot(plot_df, x, y, color=color, title=chart_spec.get("title"))
 
     if chart_type == "scatter":
-        return generate_scatter_plot(plot_df, x, y, color=color, title=title)
+        return generate_scatter_plot(plot_df, x, y, color=color, title=chart_spec.get("title"))
 
     if chart_type == "box":
-        return generate_box_plot(plot_df, x, y, color=color, title=title)
+        return generate_box_plot(plot_df, x, y, color=color, title=chart_spec.get("title"))
 
     raise ValueError(f"Chart type '{chart_type}' is not implemented.")

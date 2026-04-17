@@ -12,7 +12,7 @@ from src.insight_builder import (
     compare_two_dimensions,
 )
 from src.llm_layer import generate_chart_spec, generate_exec_memo
-from src.chart_layer import create_chart_from_spec
+from src.chart_layer import create_chart_from_spec, generate_bar_plot, generate_line_plot
 
 
 st.set_page_config(page_title="Agentic KPI Insights", layout="wide")
@@ -83,9 +83,7 @@ else:
     st.warning("No valid dimensions available for driver analysis.")
     st.stop()
 
-# ---------------------------
-# GROUP-BY ANALYSIS
-# ---------------------------
+
 st.markdown("### Group-by Analysis")
 
 metric_options = ["revenue", "spend", "conversions", "CTR", "CAC", "ROAS"]
@@ -268,6 +266,229 @@ if "key_findings" in insights:
     st.json(insights["key_findings"])
 
 # ---------------------------
+# MAIN DEMO DASHBOARDS
+st.subheader("Main Demo Dashboards")
+st.markdown(
+    "Explore current period performance across channels and segments with demo dashboard visuals."
+)
+
+current_weekly = weekly[weekly["date"] == current_period]
+baseline_weekly = weekly[weekly["date"] == baseline_period]
+
+current_rev = float(current_weekly["revenue"].sum()) if not current_weekly.empty else 0.0
+current_spend = float(current_weekly["spend"].sum()) if not current_weekly.empty else 0.0
+current_roas = float(current_weekly["ROAS"].mean()) if "ROAS" in current_weekly.columns and not current_weekly.empty else 0.0
+current_cac = float(current_weekly["CAC"].mean()) if "CAC" in current_weekly.columns and not current_weekly.empty else 0.0
+
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("Revenue", f"${current_rev:,.0f}")
+col2.metric("Spend", f"${current_spend:,.0f}")
+col3.metric("ROAS", f"{current_roas:.2f}")
+col4.metric("CAC", f"${current_cac:.2f}")
+
+if "channel" in result.df.columns:
+    channel_plot_df = result.df[result.df["date"] == current_period].copy()
+    if not channel_plot_df.empty and "revenue" in channel_plot_df.columns:
+        channel_summary = (
+            channel_plot_df.groupby("channel", dropna=False)["revenue"]
+            .sum()
+            .reset_index()
+            .sort_values("revenue", ascending=False)
+        )
+        st.markdown("### Channel Revenue Performance")
+        st.altair_chart(
+            generate_bar_plot(
+                channel_summary,
+                x="channel",
+                y="revenue",
+                title=f"Revenue by Channel ({current_period})"
+            ),
+            use_container_width=True,
+        )
+    else:
+        st.info("No channel revenue available for the current period.")
+else:
+    st.info("Channel column not found to render channel performance.")
+
+if not weekly.empty and "date" in weekly.columns:
+    st.markdown("### Weekly KPI Trend")
+    st.altair_chart(
+        generate_line_plot(
+            weekly,
+            x="date",
+            y="revenue",
+            title="Weekly Revenue Trend"
+        ).properties(width=900, height=420),
+        use_container_width=True,
+    )
+else:
+    st.info("No weekly KPI trend data available.")
+
+if "customer_segment" in result.df.columns:
+    segment_df = result.df[result.df["date"] == current_period].copy()
+    if not segment_df.empty:
+        seg_perf = segment_df.groupby("customer_segment", dropna=False).agg(
+            revenue=("revenue", "sum"),
+            conversions=("conversions", "sum"),
+        ).reset_index().sort_values("revenue", ascending=False)
+        st.markdown("### Segment Performance")
+        st.altair_chart(
+            generate_bar_plot(
+                seg_perf,
+                x="customer_segment",
+                y="revenue",
+                title=f"Revenue by Segment ({current_period})"
+            ),
+            use_container_width=True,
+        )
+        st.dataframe(seg_perf, use_container_width=True)
+    else:
+        st.info("No segment data available for the current period.")
+
+# ---------------------------
+# SUPPORTING VISUALS
+st.subheader("Supporting Visuals")
+st.markdown("Additional exploratory charts for deeper data context.")
+
+show_supporting = st.button("Show supporting dashboard")
+
+if show_supporting:
+    support_df = result.df.copy()
+    support_df["date"] = pd.to_datetime(support_df["date"], errors="coerce")
+
+    # keep only rows with valid dates
+    support_df = support_df.dropna(subset=["date"])
+
+    if support_df["date"].isna().all():
+        st.info("Unable to build supporting visuals: invalid date values.")
+    else:
+        current_period_date = pd.to_datetime(current_period, errors="coerce")
+        current_support_df = support_df[support_df["date"] == current_period_date].copy()
+
+        # ---------------------------------
+        # 1. Revenue Trend by Target Audience
+        # ---------------------------------
+        audience_col = None
+        for candidate in ["Target_Audience", "target_audience", "audience"]:
+            if candidate in support_df.columns:
+                audience_col = candidate
+                break
+
+        if audience_col is not None and "revenue" in support_df.columns:
+            weekly_audience = (
+                support_df
+                .dropna(subset=[audience_col, "revenue"])
+                .assign(week_start=support_df["date"].dt.to_period("W").apply(lambda r: r.start_time))
+                .groupby(["week_start", audience_col], dropna=False)["revenue"]
+                .sum()
+                .reset_index()
+                .sort_values([audience_col, "week_start"])
+            )
+
+            if not weekly_audience.empty:
+                # smooth slightly for cleaner display
+                weekly_audience["smoothed_revenue"] = (
+                    weekly_audience
+                    .groupby(audience_col)["revenue"]
+                    .transform(lambda s: s.rolling(3, min_periods=1).mean())
+                )
+
+                st.markdown("### Revenue Trend by Target Audience")
+                st.caption("Weekly revenue trends across audience groups, aggregated by week for a cleaner class-demo visualization.")
+
+                audience_trend_chart = (
+                    alt.Chart(weekly_audience)
+                    .mark_line(interpolate="monotone", strokeWidth=3)
+                    .encode(
+                        x=alt.X("week_start:T", title="Week"),
+                        y=alt.Y("smoothed_revenue:Q", title="Weekly Revenue"),
+                        color=alt.Color(
+                            f"{audience_col}:N",
+                            title="Target Audience",
+                            legend=alt.Legend(columns=2)
+                        ),
+                        tooltip=[
+                            alt.Tooltip("week_start:T", title="Week"),
+                            alt.Tooltip(f"{audience_col}:N", title="Audience"),
+                            alt.Tooltip("smoothed_revenue:Q", title="Revenue", format=",.0f"),
+                        ],
+                    )
+                    .properties(
+                        title="Revenue Trend by Target Audience",
+                        width=900,
+                        height=420
+                    )
+                )
+                st.altair_chart(audience_trend_chart, use_container_width=True)
+            else:
+                st.info("No weekly audience revenue data available.")
+        else:
+            st.info("No audience column found for revenue trend by audience.")
+
+        # ---------------------------------
+        # 2. Conversions by Company
+        # ---------------------------------
+        company_col = None
+        for candidate in ["Company", "company", "Organization", "organization"]:
+            if candidate in support_df.columns:
+                company_col = candidate
+                break
+
+        if company_col is not None and "conversions" in support_df.columns:
+            company_conversions = (
+                support_df
+                .dropna(subset=[company_col, "conversions"])
+                .groupby(company_col, dropna=False)["conversions"]
+                .sum()
+                .reset_index()
+                .sort_values("conversions", ascending=False)
+            )
+
+            if not company_conversions.empty:
+                st.markdown("### Conversions by Company")
+                st.caption("Comparison of total conversions across companies for the selected period.")
+
+                company_chart = (
+                    alt.Chart(company_conversions)
+                    .mark_bar()
+                    .encode(
+                        x=alt.X(
+                            f"{company_col}:N",
+                            sort="-y",
+                            title="Company",
+                            axis=alt.Axis(labelAngle=-35)
+                        ),
+                        y=alt.Y("conversions:Q", title="Total Conversions"),
+                        color=alt.Color(f"{company_col}:N", title="Company"),
+                        tooltip=[
+                            alt.Tooltip(f"{company_col}:N", title="Company"),
+                            alt.Tooltip("conversions:Q", title="Conversions", format=",.0f")
+                        ]
+                    )
+                    .properties(
+                        title="Conversions by Company",
+                        width=900,
+                        height=420
+                    )
+                )
+
+                labels = (
+                    alt.Chart(company_conversions)
+                    .mark_text(dy=-6, fontSize=11)
+                    .encode(
+                        x=alt.X(f"{company_col}:N", sort="-y"),
+                        y=alt.Y("conversions:Q"),
+                        text=alt.Text("conversions:Q", format=",.0f")
+                    )
+                )
+
+                st.altair_chart(company_chart + labels, use_container_width=True)
+            else:
+                st.info("No company conversion data available for the selected period.")
+        else:
+            st.info("Company column or conversions column not found.")
+
+# ---------------------------
 # CHART RECOMMENDATION
 # ---------------------------
 st.subheader("Chart Recommendation")
@@ -288,10 +509,10 @@ if st.session_state.chart_spec is not None:
 
     try:
         chart = create_chart_from_spec(
-    result.df,
-    st.session_state.chart_spec,
-    current_period=current_period
-)
+            result.df,
+            st.session_state.chart_spec,
+            current_period=current_period,
+        )
         st.altair_chart(chart.properties(height=420), use_container_width=True)
     except Exception as render_error:
         st.error(f"Unable to render chart from spec: {render_error}")
@@ -478,7 +699,13 @@ try:
             st.write(f"Decomposing {decompose_metric}")
 
             decomposition_input = weekly_trends.set_index("date")[decompose_metric].dropna()
-            decomposition_input = decomposition_input.sort_index().asfreq("W", method="pad")
+            decomposition_input = (
+                decomposition_input
+                .sort_index()
+                .groupby(level=0)
+                .mean()
+                .asfreq("W", method="pad")
+            )
 
             st.write("Decomposition frequency: weekly")
 
